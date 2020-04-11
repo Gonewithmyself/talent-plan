@@ -95,6 +95,8 @@ func (c *MRCluster) worker() {
 				bs := make([]*bufio.Writer, t.nReduce)
 				for i := range fs {
 					rpath := reduceName(t.dataDir, t.jobName, t.taskNumber, i)
+					// fmt.Println(rpath)
+					// panic("12")
 					fs[i], bs[i] = CreateFileAndBuf(rpath)
 				}
 				results := t.mapF(t.mapFile, string(content))
@@ -112,7 +114,42 @@ func (c *MRCluster) worker() {
 				// hint: don't encode results returned by ReduceF, and just output
 				// them into the destination file directly so that users can get
 				// results formatted as what they want.
-				panic("YOUR CODE HERE")
+				// panic("YOUR CODE HERE")
+
+				decs := make([]*json.Decoder, t.nMap)
+				m := make(map[string][]string)
+				prepareReduce := func() {
+					for i := 0; i < t.nMap; i++ {
+						rpth := reduceName(t.dataDir, t.jobName, i, t.taskNumber)
+						f, r := OpenFileAndBuf(rpth)
+						decs[i] = json.NewDecoder(r)
+						defer func(f *os.File) {
+							f.Close()
+						}(f)
+
+						kv := &KeyValue{}
+						for {
+							if e := decs[i].Decode(kv); e != nil {
+								break
+							}
+							vs, ok := m[kv.Key]
+							if !ok {
+								vs = make([]string, 0, 32)
+							}
+							vs = append(vs, kv.Value)
+							m[kv.Key] = vs
+						}
+					}
+				}
+				prepareReduce()
+				f, buf := CreateFileAndBuf(mergeName(t.dataDir, t.jobName, t.taskNumber))
+				for k, v := range m {
+					res := t.reduceF(k, v)
+					WriteToBuf(buf, res)
+				}
+				SafeClose(f, buf)
+				// perform reduce
+
 			}
 			t.wg.Done()
 		case <-c.exit:
@@ -138,6 +175,7 @@ func (c *MRCluster) run(jobName, dataDir string, mapF MapF, reduceF ReduceF, map
 	// map phase
 	nMap := len(mapFiles)
 	tasks := make([]*task, 0, nMap)
+	// fmt.Printf("%v", jsonfy(mapFiles))
 	for i := 0; i < nMap; i++ {
 		t := &task{
 			dataDir:    dataDir,
@@ -153,13 +191,38 @@ func (c *MRCluster) run(jobName, dataDir string, mapF MapF, reduceF ReduceF, map
 		tasks = append(tasks, t)
 		go func() { c.taskCh <- t }()
 	}
+
 	for _, t := range tasks {
 		t.wg.Wait()
 	}
 
 	// reduce phase
 	// YOUR CODE HERE :D
-	panic("YOUR CODE HERE")
+	// panic("YOUR CODE HERE")
+
+	tasks = make([]*task, 0, nReduce)
+	resFiles := make([]string, nReduce)
+	for i := 0; i < nReduce; i++ {
+		t := &task{
+			dataDir:    dataDir,
+			jobName:    jobName,
+			phase:      reducePhase,
+			taskNumber: i,
+			nReduce:    nReduce,
+			nMap:       nMap,
+			reduceF:    reduceF,
+		}
+		t.wg.Add(1)
+		tasks = append(tasks, t)
+		resFiles[i] = mergeName(t.dataDir, t.jobName, t.taskNumber)
+		go func() { c.taskCh <- t }()
+	}
+
+	for _, t := range tasks {
+		t.wg.Wait()
+	}
+
+	notify <- resFiles
 }
 
 func ihash(s string) int {

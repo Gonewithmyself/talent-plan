@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -17,12 +18,38 @@ type RoundArgs struct {
 	NReduce    int
 }
 
+func jsonfy(v interface{}) string {
+	res, _ := json.Marshal(v)
+	return string(res)
+}
+
 // RoundsArgs represents arguments used in multiple map-reduce rounds.
 type RoundsArgs []RoundArgs
 
 type urlCount struct {
 	url string
 	cnt int
+}
+
+type UrlHeap []urlCount
+
+func (h UrlHeap) Len() int { return len(h) }
+func (h UrlHeap) Less(i, j int) bool {
+	if h[i].cnt == h[j].cnt {
+		return h[i].url >= h[j].url
+	}
+	return h[i].cnt < h[j].cnt
+}
+func (h UrlHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+func (h *UrlHeap) Push(x interface{}) {
+	*h = append(*h, x.(urlCount))
+}
+func (h *UrlHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
 }
 
 // TopN returns topN urls in the urlCntMap.

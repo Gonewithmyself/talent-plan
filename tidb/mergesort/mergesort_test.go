@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/pingcap/check"
 )
 
@@ -18,24 +19,30 @@ func TestT(t *testing.T) {
 func prepare(src []int64) {
 	rand.Seed(time.Now().Unix())
 	for i := range src {
-		src[i] = rand.Int63()
+		src[i] = rand.Int63() % 1000
 	}
 }
 
 type sortTestSuite struct{}
 
+var testFn = MergeSortMutiGoroutine
+
 func (s *sortTestSuite) TestMergeSort(c *check.C) {
 	lens := []int{1, 3, 5, 7, 11, 13, 17, 19, 23, 29, 1024, 1 << 13, 1 << 17, 1 << 19, 1 << 20}
-
+	//lens = []int{7}
 	for i := range lens {
 		src := make([]int64, lens[i])
 		expect := make([]int64, lens[i])
 		prepare(src)
 		copy(expect, src)
-		MergeSort(src)
+		testFn(src)
 		sort.Slice(expect, func(i, j int) bool { return expect[i] < expect[j] })
 		for i := 0; i < len(src); i++ {
-			c.Assert(src[i], check.Equals, expect[i])
+			if src[i] != expect[i] {
+				spew.Println(src)
+				panic(len(src))
+			}
+			//c.Assert(src[i], check.Equals, expect[i])
 		}
 	}
 }
